@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate Todo Timer App</title>
+<style>
+:root{
+--bg:#eef1f6;
+--card:#fff;
+--text:#333;
+--primary:#5a67ff;
+--success:#16a34a;
+--warning:#f59e0b;
+--danger:#ef4444;
+}
+.dark{
+--bg:#0f172a;
+--card:#1e293b;
+--text:#f1f5f9;
+--primary:#38bdf8;
+--success:#22c55e;
+--warning:#fbbf24;
+--danger:#ef4444;
+}
+*{margin:0;padding:0;box-sizing:border-box;font-family:Segoe UI;}
+body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;padding:20px;}
+.app{width:100%;max-width:1000px;background:var(--card);border-radius:16px;padding:25px;box-shadow:0 10px 25px rgba(0,0,0,.2);}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+h1{font-size:26px;}
+.theme{cursor:pointer;font-size:22px;}
+.inputBox{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px;}
+input,select{padding:10px;border-radius:8px;border:1px solid #ccc;flex:1;}
+button{border:none;background:var(--primary);color:white;padding:10px 14px;border-radius:8px;cursor:pointer;}
+button:hover{opacity:.9;}
+.search{margin:10px 0;padding:8px;border-radius:8px;border:1px solid #ccc;width:100%;}
+.progress{height:8px;background:#ddd;border-radius:20px;overflow:hidden;margin-bottom:15px;}
+.progressBar{height:100%;background:var(--primary);width:0%;transition:.4s;}
+.filters,.categories{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;}
+.task{display:flex;justify-content:space-between;align-items:center;background:var(--card);border:1px solid #ddd;padding:12px;border-radius:10px;margin-bottom:10px;flex-wrap:wrap;cursor:grab;}
+.task.dragging{opacity:.5;}
+.taskText.completed{text-decoration:line-through;opacity:.6;}
+.actions button{font-size:12px;margin-left:5px;}
+.badge{font-size:11px;padding:3px 6px;border-radius:5px;color:white;margin-left:6px;}
+.low{background:var(--success);}
+.medium{background:var(--warning);}
+.high{background:var(--danger);}
+.pin{color:gold;font-size:14px;margin-left:5px;}
+small{display:block;opacity:.7;}
+.stats{display:flex;gap:15px;margin:15px 0;flex-wrap:wrap;}
+.statBox{flex:1;background:#f0f0f0;padding:10px;border-radius:10px;text-align:center;}
+.dark .statBox{background:#2a2a3a;}
+.timer{font-size:12px;margin-top:5px;font-weight:bold;}
+canvas{background:#fff;border-radius:10px;margin-bottom:15px;}
+@media(max-width:700px){.inputBox{flex-direction:column;}.task{flex-direction:column;align-items:flex-start;gap:8px;}.actions{align-self:flex-end;}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<h1>⏱ Ultimate Todo Timer</h1>
+<div class="theme" onclick="toggleTheme()">🌙</div>
+</header>
+
+<div class="inputBox">
+<input id="taskInput" placeholder="Enter task">
+<input type="date" id="date">
+<input type="time" id="time">
+<select id="priority">
+<option value="low">Low</option>
+<option value="medium">Medium</option>
+<option value="high">High</option>
+</select>
+<select id="category">
+<option value="General">General</option>
+<option value="Work">Work</option>
+<option value="Personal">Personal</option>
+</select>
+<button onclick="addTask()">Add</button>
+<button onclick="voiceInput()">🎤</button>
+</div>
+
+<input class="search" id="search" placeholder="Search tasks..." oninput="render()">
+
+<canvas id="priorityChart" height="150"></canvas>
+
+<div class="progress"><div class="progressBar" id="progressBar"></div></div>
+
+<div class="filters">
+<button onclick="setFilter('all')">All</button>
+<button onclick="setFilter('active')">Active</button>
+<button onclick="setFilter('completed')">Completed</button>
+</div>
+
+<div class="categories">
+<select id="filterCategory" onchange="render()">
+<option value="All">All Categories</option>
+<option value="General">General</option>
+<option value="Work">Work</option>
+<option value="Personal">Personal</option>
+</select>
+</div>
+
+<div class="stats">
+<div class="statBox">Total: <span id="totalTasks">0</span></div>
+<div class="statBox">Completed: <span id="completedTasks">0</span></div>
+<div class="statBox">Pending: <span id="pendingTasks">0</span></div>
+</div>
+
+<div id="taskList"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let tasks=JSON.parse(localStorage.getItem("tasks"))||[];
+let filter="all";
+let draggedIndex=null;
+
+function save(){localStorage.setItem("tasks",JSON.stringify(tasks));}
+
+function render(){
+let list=document.getElementById("taskList");
+let search=document.getElementById("search").value.toLowerCase();
+let categoryFilter=document.getElementById("filterCategory").value;
+list.innerHTML="";
+let filtered=tasks.filter(t=>t.text.toLowerCase().includes(search));
+if(filter==="active") filtered=filtered.filter(t=>!t.completed);
+if(filter==="completed") filtered=filtered.filter(t=>t.completed);
+if(categoryFilter!=="All") filtered=filtered.filter(t=>t.category===categoryFilter);
+filtered.sort((a,b)=>b.pinned-a.pinned);
+filtered.forEach((task,i)=>{
+let div=document.createElement("div");
+div.className="task";
+div.draggable=true;
+div.addEventListener("dragstart",()=>{draggedIndex=i; div.classList.add("dragging");});
+div.addEventListener("dragend",()=>{div.classList.remove("dragging");});
+div.addEventListener("dragover",(e)=>{e.preventDefault();});
+div.addEventListener("drop",()=>{tasks.splice(i,0,tasks.splice(draggedIndex,1)[0]); save(); render();});
+
+// Calculate remaining time
+let remaining="";
+if(task.time){
+let now=new Date();
+let taskTime=new Date(task.date+"T"+task.time);
+let diff=taskTime-now;
+if(diff>0){
+let h=Math.floor(diff/3600000);
+let m=Math.floor((diff%3600000)/60000);
+let s=Math.floor((diff%60000)/1000);
+remaining=`${h}h ${m}m ${s}s`;
+}else{remaining="Expired"; if(!task.completed) notifyTask(task);}
+}
+
+div.innerHTML=`
+<div>
+<span class="taskText ${task.completed?'completed':''}">${task.text}</span>
+${task.pinned?'<span class="pin">📌</span>':''}
+<span class="badge ${task.priority}">${task.priority}</span>
+<small>${task.date||""} ${task.time||""} | ${task.category}</small>
+<div class="timer">${remaining}</div>
+</div>
+<div class="actions">
+<button onclick="toggle(${i})">✔</button>
+<button onclick="pin(${i})">📌</button>
+<button onclick="edit(${i})">✏</button>
+<button onclick="removeTask(${i})">🗑</button>
+</div>
+`;
+list.appendChild(div);
+});
+updateProgress();
+updateStats();
+updateChart();
+}
+
+function addTask(){
+let text=document.getElementById("taskInput").value;
+let date=document.getElementById("date").value;
+let time=document.getElementById("time").value;
+let priority=document.getElementById("priority").value;
+let category=document.getElementById("category").value;
+if(!text) return;
+tasks.push({text,date,time,priority,category,completed:false,pinned:false});
+document.getElementById("taskInput").value="";
+save();render();
+}
+
+function toggle(i){tasks[i].completed=!tasks[i].completed; save(); render();}
+function pin(i){tasks[i].pinned=!tasks[i].pinned; save(); render();}
+function edit(i){let t=prompt("Edit task",tasks[i].text); if(t){tasks[i].text=t; save(); render();}}
+function removeTask(i){tasks.splice(i,1); save(); render();}
+function setFilter(f){filter=f; render();}
+function updateProgress(){let done=tasks.filter(t=>t.completed).length;let percent=tasks.length? (done/tasks.length)*100:0;document.getElementById("progressBar").style.width=percent+"%";}
+function updateStats(){document.getElementById("totalTasks").innerText=tasks.length;document.getElementById("completedTasks").innerText=tasks.filter(t=>t.completed).length;document.getElementById("pendingTasks").innerText=tasks.filter(t=>!t.completed).length;}
+function toggleTheme(){document.body.classList.toggle("dark");}
+
+// Voice input
+function voiceInput(){
+if(!('webkitSpeechRecognition' in window)){alert('Voice input not supported'); return;}
+let recognition=new webkitSpeechRecognition();
+recognition.lang='en-US';
+recognition.onresult=e=>{document.getElementById("taskInput").value=e.results[0][0].transcript;}
+recognition.start();
+}
+
+// Notification when timer is near
+function notifyTask(task){
+if("Notification" in window && Notification.permission==="granted"){
+new Notification("Task Time!",{body:`${task.text} [${task.priority}]`});
+}
+}
+
+// Chart for priority
+let ctx=document.getElementById("priorityChart").getContext("2d");
+let priorityChart=new Chart(ctx,{type:'doughnut',data:{labels:['Low','Medium','High'],datasets:[{data:[0,0,0],backgroundColor:['#16a34a','#f59e0b','#ef4444']}]},options:{plugins:{legend:{position:'bottom'}}}});
+
+function updateChart(){
+let low=tasks.filter(t=>t.priority==='low').length;
+let med=tasks.filter(t=>t.priority==='medium').length;
+let high=tasks.filter(t=>t.priority==='high').length;
+priorityChart.data.datasets[0].data=[low,med,high];
+priorityChart.update();
+}
+
+// Update timers every second
+setInterval(render,1000);
+
+if("Notification" in window && Notification.permission!=="granted"){Notification.requestPermission();}
+
+document.getElementById("taskInput").addEventListener("keypress",e=>{if(e.key==="Enter") addTask();});
+render();
+</script>
+</body>
+</html>
